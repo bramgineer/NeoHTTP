@@ -1,4 +1,4 @@
-package com.example;
+package com.neohttp;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
