@@ -1,62 +1,125 @@
 package com.neohttp.server;
-
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.LogManager;
-
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SocketChannel;
-import java.nio.charset.StandardCharsets;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class HttpRequestHandler implements Runnable {
-    private static final Logger logger = LogManager.getLogger(HttpRequestHandler.class);
-    private final SocketChannel clientChannel;
+public class NonBlockingHttpServer {
+    private static final int PORT = 8080;
+    private Selector selector;
+    private ServerSocketChannel serverChannel;
+    private ConcurrentHashMap<SocketChannel, Connection> connections = new ConcurrentHashMap<>();
 
-    public HttpRequestHandler(SocketChannel clientChannel) {
-        this.clientChannel = clientChannel;
-    }
+    public void start() throws IOException {
+        selector = Selector.open();
+        serverChannel = ServerSocketChannel.open();
+        serverChannel.bind(new InetSocketAddress(PORT));
+        serverChannel.configureBlocking(false);
+        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-    @Override
-    public void run() {
-        try {
-            ByteBuffer buffer = ByteBuffer.allocate(1024);
-            clientChannel.read(buffer);
-            String request = new String(buffer.array(), StandardCharsets.UTF_8).trim();
-            logger.info("Received request: {}", request);
+        while (true) {
+            selector.select();
+            Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
 
-            HttpResponse response = handleRequest(request);
-            clientChannel.write(ByteBuffer.wrap(response.toString().getBytes(StandardCharsets.UTF_8)));
-        } catch (IOException e) {
-            logger.error("Request handling error: ", e);
-        } finally {
-            try {
-                if (clientChannel != null) {
-                    clientChannel.close();
+            while (keys.hasNext()) {
+                SelectionKey key = keys.next();
+                keys.remove();
+
+                if (!key.isValid()) continue;
+
+                if (key.isAcceptable()) {
+                    accept(key);
+                } else if (key.isReadable()) {
+                    read(key);
+                } else if (key.isWritable()) {
+                    write(key);
                 }
-            } catch (IOException e) {
-                logger.error("Error closing client channel: ", e);
             }
         }
     }
 
-    private HttpResponse handleRequest(String request) {
-        HttpResponse response = new HttpResponse();
-        if (request.startsWith("GET")) {
-            response.setStatusCode(200);
-            response.setBody("<html><body><h1>GET request received</h1></body></html>");
-        } else if (request.startsWith("POST")) {
-            response.setStatusCode(200);
-            response.setBody("<html><body><h1>POST request received</h1></body></html>");
-        } else if (request.startsWith("PUT")) {
-            response.setStatusCode(200);
-            response.setBody("<html><body><h1>PUT request received</h1></body></html>");
-        } else if (request.startsWith("DELETE")) {
-            response.setStatusCode(200);
-            response.setBody("<html><body><h1>DELETE request received</h1></body></html>");
-        } else {
-            response.setStatusCode(400);
-            response.setBody("<html><body><h1>Bad Request</h1></body></html>");
+    private void accept(SelectionKey key) throws IOException {
+        ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
+        SocketChannel clientChannel = serverChannel.accept();
+        clientChannel.configureBlocking(false);
+        clientChannel.register(selector, SelectionKey.OP_READ);
+        connections.put(clientChannel, new Connection());
+    }
+
+    private void read(SelectionKey key) throws IOException {
+        SocketChannel clientChannel = (SocketChannel) key.channel();
+        Connection conn = connections.get(clientChannel);
+        conn.read(clientChannel);
+
+        if (conn.isRequestComplete()) {
+            conn.prepareResponse();
+            key.interestOps(SelectionKey.OP_WRITE);
         }
-        return response;
+    }
+
+    private void write(SelectionKey key) throws IOException {
+        SocketChannel clientChannel = (SocketChannel) key.channel();
+        Connection conn = connections.get(clientChannel);
+        conn.write(clientChannel);
+
+        if (conn.isResponseComplete()) {
+            if (conn.isKeepAlive()) {
+                key.interestOps(SelectionKey.OP_READ);
+                conn.reset();
+            } else {
+                connections.remove(clientChannel);
+                clientChannel.close();
+                key.cancel();
+            }
+        }
+    }
+
+    private class Connection {
+        private ByteBuffer requestBuffer = ByteBuffer.allocate(1024);
+        private ByteBuffer responseBuffer;
+        private boolean keepAlive = false;
+
+        void read(SocketChannel channel) throws IOException {
+            channel.read(requestBuffer);
+        }
+
+        boolean isRequestComplete() {
+            // Implement logic to check if the full request has been received
+            return requestBuffer.position() > 0 && new String(requestBuffer.array()).contains("\r\n\r\n");
+        }
+
+        void prepareResponse() {
+            // Parse request and prepare response
+            String request = new String(requestBuffer.array()).trim();
+            String response;
+            if (request.startsWith("GET")) {
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Hello, World!</h1></body></html>";
+            } else {
+                response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+            }
+            responseBuffer = ByteBuffer.wrap(response.getBytes());
+            
+            // Check for keep-alive
+            keepAlive = request.toLowerCase().contains("connection: keep-alive");
+        }
+
+        void write(SocketChannel channel) throws IOException {
+            channel.write(responseBuffer);
+        }
+
+        boolean isResponseComplete() {
+            return responseBuffer != null && !responseBuffer.hasRemaining();
+        }
+
+        boolean isKeepAlive() {
+            return keepAlive;
+        }
+
+        void reset() {
+            requestBuffer.clear();
+            responseBuffer = null;
+        }
     }
 }
