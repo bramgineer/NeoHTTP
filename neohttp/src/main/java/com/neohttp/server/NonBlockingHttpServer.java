@@ -11,6 +11,7 @@ public class NonBlockingHttpServer {
     private Selector selector;
     private ServerSocketChannel serverChannel;
     private ConcurrentHashMap<SocketChannel, Connection> connections = new ConcurrentHashMap<>();
+   // private static final Logger logger = Logger.getLogger(NonBlockingHttpServer.class.getName());
 
     public void start() throws IOException {
         selector = Selector.open();
