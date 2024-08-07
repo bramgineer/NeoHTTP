@@ -42,6 +42,9 @@ public class NonBlockingHttpServer {
     }
 
     private void accept(SelectionKey key) throws IOException {
+        /*
+         * Accept a new connection.
+         */
         ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
         SocketChannel clientChannel = serverChannel.accept();
         clientChannel.configureBlocking(false);
@@ -50,6 +53,9 @@ public class NonBlockingHttpServer {
     }
 
     private void read(SelectionKey key) throws IOException {
+        /*
+         * Read a request from the client.
+         */
         SocketChannel clientChannel = (SocketChannel) key.channel();
         Connection conn = connections.get(clientChannel);
         conn.read(clientChannel);
@@ -61,6 +67,9 @@ public class NonBlockingHttpServer {
     }
 
     private void write(SelectionKey key) throws IOException {
+        /*
+         * Write a response to the client.
+         */
         SocketChannel clientChannel = (SocketChannel) key.channel();
         Connection conn = connections.get(clientChannel);
         conn.write(clientChannel);
@@ -78,6 +87,9 @@ public class NonBlockingHttpServer {
     }
 
     private class Connection {
+        /*
+         * A connection represents a single client connection.
+         */
         private ByteBuffer requestBuffer = ByteBuffer.allocate(1024);
         private ByteBuffer responseBuffer;
         private boolean keepAlive = false;
