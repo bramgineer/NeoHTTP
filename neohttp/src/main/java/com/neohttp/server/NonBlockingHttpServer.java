@@ -214,21 +214,6 @@ public class NonBlockingHttpServer {
             responseBuffer = null;
         }
 
-        public void stop() {
-            if (serverChannel != null && serverChannel.isOpen()) {
-                try {
-                    serverChannel.close();
-                    System.out.println("Server stopped successfully.");
-                } catch (IOException e) {
-                    System.err.println("Error while stopping the server: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            } else {
-                System.out.println("Server is not running or already stopped.");
-            }
-            shutdown();
-        }
-
         public void close() {
             try {
                 if (requestBuffer != null) {
