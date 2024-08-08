@@ -1,27 +1,43 @@
 package com.neohttp.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.logging.*;
+import java.text.SimpleDateFormat;
 
 public class LoggerConfig {
     public static void configure() {
-        // Set the default logging level
-        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
-        
-        // Configure the date-time format for logging
-        System.setProperty(org.slf4j.impl.SimpleLogger.DATE_TIME_FORMAT_KEY, "yyyy-MM-dd HH:mm:ss:SSS");
-        
-        // Show logger name in output
-        System.setProperty(org.slf4j.impl.SimpleLogger.SHOW_LOG_NAME_KEY, "true");
-        
-        // Show thread name in output
-        System.setProperty(org.slf4j.impl.SimpleLogger.SHOW_THREAD_NAME_KEY, "true");
-        
-        // Configure log output to include the calling class and line number
-        System.setProperty(org.slf4j.impl.SimpleLogger.SHOW_SHORT_LOG_NAME_KEY, "true");
-        
+        // Get the root logger
+        Logger rootLogger = Logger.getLogger("");
+        rootLogger.setLevel(Level.INFO);
+
+        // Remove existing handlers
+        for (Handler handler : rootLogger.getHandlers()) {
+            rootLogger.removeHandler(handler);
+        }
+
+        // Create and set a new ConsoleHandler
+        ConsoleHandler consoleHandler = new ConsoleHandler();
+        consoleHandler.setLevel(Level.INFO);
+
+        // Create and set a custom formatter
+        consoleHandler.setFormatter(new Formatter() {
+            private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss:SSS");
+
+            @Override
+            public String format(LogRecord record) {
+                StringBuilder sb = new StringBuilder();
+                sb.append(dateFormat.format(record.getMillis())).append(" ");
+                sb.append("[").append(record.getLongThreadID()).append("] ");
+                sb.append(record.getLoggerName()).append(" ");
+                sb.append(record.getLevel().getName()).append(": ");
+                sb.append(formatMessage(record)).append("\n");
+                return sb.toString();
+            }
+        });
+
+        rootLogger.addHandler(consoleHandler);
+
         // Create a logger instance (optional, for demonstration)
-        Logger logger = LoggerFactory.getLogger(LoggerConfig.class);
-        logger.info("SLF4J logging configured successfully");
+        Logger logger = Logger.getLogger(LoggerConfig.class.getName());
+        logger.info("Java Util Logging configured successfully");
     }
 }

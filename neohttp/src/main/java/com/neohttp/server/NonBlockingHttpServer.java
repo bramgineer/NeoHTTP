@@ -5,15 +5,15 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 public class NonBlockingHttpServer {
     private static final int PORT = 8080;
     private Selector selector;
     private ServerSocketChannel serverChannel;
     private ConcurrentHashMap<SocketChannel, Connection> connections = new ConcurrentHashMap<>();
-    private static final Logger logger = LoggerFactory.getLogger(NonBlockingHttpServer.class);
+    private static final Logger logger = Logger.getLogger(NonBlockingHttpServer.class.getName());
 
     public void start() throws IOException {
         selector = Selector.open();
@@ -25,7 +25,7 @@ public class NonBlockingHttpServer {
         // Add shutdown hook for clean resource management
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
-        logger.info("Server started on port {}", PORT);
+        logger.info("Server started on port " + PORT);
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -47,14 +47,37 @@ public class NonBlockingHttpServer {
                             write(key);
                         }
                     } catch (IOException e) {
-                        logger.warn("Error handling channel operation", e);
+                        logger.log(Level.WARNING, "Error handling channel operation", e);
                         handleChannelError(key);
                     }
                 }
             } catch (IOException e) {
-                logger.error("Error in main server loop", e);
+                logger.log(Level.SEVERE, "Error in main server loop", e);
             }
         }
+    }
+
+    public void close() throws IOException {
+        logger.info("Closing the server...");
+        try {
+            if (selector != null && selector.isOpen()) {
+                selector.close();
+                logger.info("Selector closed successfully");
+            }
+            if (serverChannel != null && serverChannel.isOpen()) {
+                serverChannel.close();
+                logger.info("Server channel closed successfully");
+            }
+            for (Connection conn : connections.values()) {
+                conn.close();
+            }
+            connections.clear();
+            logger.info("All connections closed");
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error while closing the server", e);
+            throw e; // Re-throw the exception to inform the caller about the failure
+        }
+        logger.info("Server closed successfully");
     }
 
     private void shutdown() {
@@ -66,7 +89,7 @@ public class NonBlockingHttpServer {
             }
             logger.info("Server shut down gracefully");
         } catch (IOException e) {
-            logger.error("Error during server shutdown", e);
+            logger.log(Level.SEVERE, "Error during server shutdown", e);
         }
     }
 
@@ -85,7 +108,7 @@ public class NonBlockingHttpServer {
         clientChannel.configureBlocking(false);
         clientChannel.register(selector, SelectionKey.OP_READ);
         connections.put(clientChannel, new Connection());
-        logger.info("New connection accepted: {}", clientChannel.getRemoteAddress());
+        logger.info("New connection accepted: " + clientChannel.getRemoteAddress());
     }
 
     private void read(SelectionKey key) throws IOException {
@@ -94,7 +117,7 @@ public class NonBlockingHttpServer {
         try {
             if (conn.read(clientChannel) == -1) {
                 // Client closed connection
-                logger.info("Client closed connection: {}", clientChannel.getRemoteAddress());
+                logger.info("Client closed connection: " + clientChannel.getRemoteAddress());
                 handleChannelError(key);
                 return;
             }
@@ -104,7 +127,7 @@ public class NonBlockingHttpServer {
                 key.interestOps(SelectionKey.OP_WRITE);
             }
         } catch (IOException e) {
-            logger.warn("Error reading from channel", e);
+            logger.log(Level.WARNING, "Error reading from channel", e);
             handleChannelError(key);
         }
     }
@@ -120,12 +143,12 @@ public class NonBlockingHttpServer {
                     key.interestOps(SelectionKey.OP_READ);
                     conn.reset();
                 } else {
-                    logger.info("Closing connection after response: {}", clientChannel.getRemoteAddress());
+                    logger.info("Closing connection after response: " + clientChannel.getRemoteAddress());
                     handleChannelError(key);
                 }
             }
         } catch (IOException e) {
-            logger.warn("Error writing to channel", e);
+            logger.log(Level.WARNING, "Error writing to channel", e);
             handleChannelError(key);
         }
     }
@@ -191,8 +214,39 @@ public class NonBlockingHttpServer {
             responseBuffer = null;
         }
 
-        void close() {
-            // Release any resources if needed
+        public void stop() {
+            if (serverChannel != null && serverChannel.isOpen()) {
+                try {
+                    serverChannel.close();
+                    System.out.println("Server stopped successfully.");
+                } catch (IOException e) {
+                    System.err.println("Error while stopping the server: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            } else {
+                System.out.println("Server is not running or already stopped.");
+            }
+            shutdown();
+        }
+
+        public void close() {
+            try {
+                if (requestBuffer != null) {
+                    requestBuffer.clear();
+                    requestBuffer = null;
+                }
+                if (responseBuffer != null) {
+                    responseBuffer.clear();
+                    responseBuffer = null;
+                }
+            } catch (Exception e) {
+                // Log the exception or handle it as appropriate for your application
+                System.err.println("Error while closing connection: " + e.getMessage());
+            } finally {
+                // Ensure all resources are nullified even if an exception occurs
+                requestBuffer = null;
+                responseBuffer = null;
+            }
         }
     }
 }
