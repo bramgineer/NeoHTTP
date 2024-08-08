@@ -67,26 +67,37 @@ public class HttpResponse {
 
     @Override
     public String toString() {
-        StringBuilder response = new StringBuilder();
-        response.append("HTTP/1.1 ").append(statusCode).append(" ").append(statusMessage).append("\r\n");
-        
-        // Add Content-Length header if not present
-        if (!headers.containsKey("Content-Length")) {
-            headers.put("Content-Length", String.valueOf(body.length()));
+        try {
+            StringBuilder response = new StringBuilder();
+            response.append("HTTP/1.1 ").append(statusCode).append(" ").append(statusMessage).append("\r\n");
+            
+            // Add Content-Length header if not present
+            if (!headers.containsKey("Content-Length")) {
+                headers.put("Content-Length", String.valueOf(body != null ? body.length() : 0));
+            }
+            
+            // Add headers
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    response.append(entry.getKey()).append(": ").append(entry.getValue()).append("\r\n");
+                }
+            }
+            
+            // Add an empty line to separate headers from body
+            response.append("\r\n");
+            
+            // Add body
+            if (body != null) {
+                response.append(body);
+            }
+            
+            return response.toString();
+        } catch (Exception e) {
+            // Log the exception
+            System.err.println("Error generating HTTP response: " + e.getMessage());
+            // Return a basic error response
+            return "HTTP/1.1 500 Internal Server Error\r\n\r\nError generating response";
         }
-        
-        // Add headers
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            response.append(entry.getKey()).append(": ").append(entry.getValue()).append("\r\n");
-        }
-        
-        // Add an empty line to separate headers from body
-        response.append("\r\n");
-        
-        // Add body
-        response.append(body);
-        
-        return response.toString();
     }
 
     public static HttpResponse ok(String body) {

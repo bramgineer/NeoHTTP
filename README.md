@@ -16,8 +16,8 @@ NeoHTTP is a lightweight, non-blocking HTTP server implemented in Java. It's des
 
 ### To Be Implemented
 
-- [ ] Error handling and logging
-  - [ ] Comprehensive error handling in all components
+- [] Error handling and logging
+  - [x] Comprehensive error handling in all components
   - [ ] Integration with a logging framework (e.g., SLF4J with Logback)
 - [ ] Configuration management
   - [ ] Server port configuration

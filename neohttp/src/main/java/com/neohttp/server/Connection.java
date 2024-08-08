@@ -27,9 +27,19 @@ public class Connection {
         /*
          * Initialize the connection with a request buffer of size BUFFER_SIZE.
          */
-        this.requestBuffer = ByteBuffer.allocate(BUFFER_SIZE);
-        this.keepAlive = false;
-        this.state = ConnectionState.READING;
+        try {
+            this.requestBuffer = ByteBuffer.allocate(BUFFER_SIZE);
+            this.keepAlive = false;
+            this.state = ConnectionState.READING;
+        } catch (IllegalArgumentException e) {
+            // Handle the case where BUFFER_SIZE is negative
+            this.lastException = new RuntimeException("Failed to allocate request buffer", e);
+            this.state = ConnectionState.CLOSED;
+        } catch (OutOfMemoryError e) {
+            // Handle the case where there's not enough memory to allocate the buffer
+            this.lastException = new RuntimeException("Insufficient memory to allocate request buffer", e);
+            this.state = ConnectionState.CLOSED;
+        }
     }
 
     public void read(SocketChannel channel) throws IOException {
@@ -114,11 +124,17 @@ public class Connection {
         /*
          * Reset the connection state.
          */
-        requestBuffer.clear();
-        responseBuffer = null;
-        request = null;
-        response = null;
-        state = ConnectionState.READING;
+        try {
+            requestBuffer.clear();
+            responseBuffer = null;
+            request = null;
+            response = null;
+            state = ConnectionState.READING;
+        } catch (Exception e) {
+            handleException(e);
+            // If an exception occurs during reset, we should ensure the connection is closed
+            state = ConnectionState.CLOSED;
+        }
     }
 
     public boolean isKeepAlive() {

@@ -2,6 +2,8 @@ package com.neohttp.server;
 
 import java.util.Map;
 import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashMap;
 
 public class HttpRequest {
     private final String method;
@@ -13,27 +15,56 @@ public class HttpRequest {
     public HttpRequest(String method, String path, String version, Map<String, String> headers, String body) {
         // Validate method
         if (method == null || method.trim().isEmpty()) {
-            throw new IllegalArgumentException("HTTP method cannot be null or empty");
+            this.method = "";
+        } else if (!isValidHttpMethod(method)) {
+            this.method = "";
+        } else {
+            this.method = method.toUpperCase();
         }
-        this.method = method.toUpperCase();
 
         // Validate path
         if (path == null) {
-            throw new IllegalArgumentException("Path cannot be null");
+            this.path = "";
+        } else if (!isValidPath(path)) {
+            this.path = "";
+        } else {
+            this.path = path;
         }
-        this.path = path;
 
         // Validate version
-        if (version == null || !version.startsWith("HTTP/")) {
-            throw new IllegalArgumentException("Invalid HTTP version");
+        if (version == null) {
+            this.version = "";
+        } else if (!version.startsWith("HTTP/")) {
+            this.version = "";
+        } else {
+            this.version = version;
         }
-        this.version = version;
 
         // Validate and copy headers
-        this.headers = headers != null ? Collections.unmodifiableMap(headers) : Collections.emptyMap();
+        if (headers == null) {
+            this.headers = Collections.emptyMap();
+        } else {
+            Map<String, String> validatedHeaders = new HashMap<>();
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey() != null && !entry.getKey().trim().isEmpty() && entry.getValue() != null) {
+                    validatedHeaders.put(entry.getKey(), entry.getValue());
+                }
+            }
+            this.headers = Collections.unmodifiableMap(validatedHeaders);
+        }
 
         // Body can be null for GET requests, so we don't validate it
         this.body = body;
+    }
+
+    private boolean isValidHttpMethod(String method) {
+        // Add more HTTP methods as needed
+        return Arrays.asList("GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH").contains(method.toUpperCase());
+    }
+
+    private boolean isValidPath(String path) {
+        // Basic path validation, can be extended for more specific requirements
+        return path.startsWith("/") && !path.contains("..") && !path.contains("//");
     }
 
     // Getters
