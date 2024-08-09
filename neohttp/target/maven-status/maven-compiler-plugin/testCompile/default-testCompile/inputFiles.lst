@@ -1,2 +1,3 @@
 /Users/verdi65/Projects/vscoderepo/NeoHTTP/neohttp/src/test/java/com/neohttp/server/HttpRequestHandlerTest.java
+/Users/verdi65/Projects/vscoderepo/NeoHTTP/neohttp/src/test/java/com/neohttp/server/NonBlockingHttpServerFunctionalTest.java
 /Users/verdi65/Projects/vscoderepo/NeoHTTP/neohttp/src/test/java/com/neohttp/server/NonBlockingHttpServerTest.java

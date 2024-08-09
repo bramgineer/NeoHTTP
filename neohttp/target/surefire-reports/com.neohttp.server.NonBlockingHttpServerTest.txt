@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.neohttp.server.NonBlockingHttpServerTest
 -------------------------------------------------------------------------------
-Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.917 s - in com.neohttp.server.NonBlockingHttpServerTest
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.782 s - in com.neohttp.server.NonBlockingHttpServerTest

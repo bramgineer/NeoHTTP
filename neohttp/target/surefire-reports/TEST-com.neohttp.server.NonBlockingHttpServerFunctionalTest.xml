@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="com.neohttp.server.NonBlockingHttpServerTest" time="0.782" tests="4" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="com.neohttp.server.NonBlockingHttpServerFunctionalTest" time="1.189" tests="2" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="22"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -58,8 +58,6 @@
     <property name="socksNonProxyHosts" value="local|*.local|169.254/16|*.169.254/16"/>
     <property name="java.class.version" value="66.0"/>
   </properties>
-  <testcase name="testServerStart" classname="com.neohttp.server.NonBlockingHttpServerTest" time="0.552"/>
-  <testcase name="testWrite" classname="com.neohttp.server.NonBlockingHttpServerTest" time="0.139"/>
-  <testcase name="testRead" classname="com.neohttp.server.NonBlockingHttpServerTest" time="0.002"/>
-  <testcase name="testAccept" classname="com.neohttp.server.NonBlockingHttpServerTest" time="0.087"/>
+  <testcase name="testGetIndexHtml" classname="com.neohttp.server.NonBlockingHttpServerFunctionalTest" time="0.144"/>
+  <testcase name="testGet404" classname="com.neohttp.server.NonBlockingHttpServerFunctionalTest" time="0.002"/>
 </testsuite>
