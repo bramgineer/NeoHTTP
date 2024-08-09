@@ -4,28 +4,39 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.util.logging.Level;
+import com.neohttp.config.ServerConfig;
 
 public class NonBlockingHttpServer {
-    private static final int PORT = 8080;
-    private Selector selector;
+
+    private final ServerConfig config;
+    protected Selector selector;
     private ServerSocketChannel serverChannel;
-    private ConcurrentHashMap<SocketChannel, Connection> connections = new ConcurrentHashMap<>();
-    private static final Logger logger = Logger.getLogger(NonBlockingHttpServer.class.getName());
+    
+    ConcurrentHashMap<SocketChannel, Connection> connections = new ConcurrentHashMap<>();
+    private Logger logger = Logger.getLogger(NonBlockingHttpServer.class.getName());
+    private final Router router;
+
+    public NonBlockingHttpServer(ServerConfig config, Router router) {
+        this.config = config;
+        this.router = router;
+        this.router.setDefaultHandler(new StaticFileHandler(config.getWebRoot()));
+    }
 
     public void start() throws IOException {
         selector = Selector.open();
         serverChannel = ServerSocketChannel.open();
-        serverChannel.bind(new InetSocketAddress(PORT));
+        serverChannel.bind(new InetSocketAddress(config.getPort()));
         serverChannel.configureBlocking(false);
         serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
         // Add shutdown hook for clean resource management
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
-        logger.info("Server started on port " + PORT);
+        logger.info("Server started on port " + config.getPort());
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -80,6 +91,10 @@ public class NonBlockingHttpServer {
         logger.info("Server closed successfully");
     }
 
+    void setLogger(Logger logger) {
+        this.logger = logger;
+    }
+
     private void shutdown() {
         try {
             selector.close();
@@ -102,16 +117,16 @@ public class NonBlockingHttpServer {
         key.cancel();
     }
 
-    private void accept(SelectionKey key) throws IOException {
+    public void accept(SelectionKey key) throws IOException {
         ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
         SocketChannel clientChannel = serverChannel.accept();
         clientChannel.configureBlocking(false);
         clientChannel.register(selector, SelectionKey.OP_READ);
         connections.put(clientChannel, new Connection());
-        logger.info("New connection accepted: " + clientChannel.getRemoteAddress());
+        logger.info("New connection accepted from: " + clientChannel.getRemoteAddress());
     }
 
-    private void read(SelectionKey key) throws IOException {
+    public void read(SelectionKey key) throws IOException {
         SocketChannel clientChannel = (SocketChannel) key.channel();
         Connection conn = connections.get(clientChannel);
         try {
@@ -123,7 +138,7 @@ public class NonBlockingHttpServer {
             }
 
             if (conn.isRequestComplete()) {
-                conn.prepareResponse();
+                conn.prepareResponse(router);
                 key.interestOps(SelectionKey.OP_WRITE);
             }
         } catch (IOException e) {
@@ -132,7 +147,7 @@ public class NonBlockingHttpServer {
         }
     }
 
-    private void write(SelectionKey key) throws IOException {
+    public void write(SelectionKey key) throws IOException {
         SocketChannel clientChannel = (SocketChannel) key.channel();
         Connection conn = connections.get(clientChannel);
         try {
@@ -153,85 +168,5 @@ public class NonBlockingHttpServer {
         }
     }
 
-    private class Connection {
-        private ByteBuffer requestBuffer = ByteBuffer.allocate(1024);
-        private ByteBuffer responseBuffer;
-        private boolean keepAlive = false;
-
-        int read(SocketChannel channel) throws IOException {
-            int totalBytesRead = 0;
-            int bytesRead;
-            do {
-                bytesRead = channel.read(requestBuffer);
-                if (bytesRead > 0) {
-                    totalBytesRead += bytesRead;
-                }
-            } while (bytesRead > 0);
-
-            if (totalBytesRead == 0 && !requestBuffer.hasRemaining()) {
-                // Buffer is full, resize it
-                ByteBuffer newBuffer = ByteBuffer.allocate(requestBuffer.capacity() * 2);
-                requestBuffer.flip();
-                newBuffer.put(requestBuffer);
-                requestBuffer = newBuffer;
-            }
-
-            return totalBytesRead;
-        }
-
-        boolean isRequestComplete() {
-            return requestBuffer.position() > 0 && new String(requestBuffer.array(), 0, requestBuffer.position()).contains("\r\n\r\n");
-        }
-
-        void prepareResponse() {
-            requestBuffer.flip();
-            String request = new String(requestBuffer.array(), 0, requestBuffer.limit()).trim();
-            String response;
-            if (request.startsWith("GET")) {
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Hello, World!</h1></body></html>";
-            } else {
-                response = "HTTP/1.1 400 Bad Request\r\n\r\n";
-            }
-            responseBuffer = ByteBuffer.wrap(response.getBytes());
-            
-            keepAlive = request.toLowerCase().contains("connection: keep-alive");
-        }
-
-        void write(SocketChannel channel) throws IOException {
-            channel.write(responseBuffer);
-        }
-
-        boolean isResponseComplete() {
-            return responseBuffer != null && !responseBuffer.hasRemaining();
-        }
-
-        boolean isKeepAlive() {
-            return keepAlive;
-        }
-
-        void reset() {
-            requestBuffer.clear();
-            responseBuffer = null;
-        }
-
-        public void close() {
-            try {
-                if (requestBuffer != null) {
-                    requestBuffer.clear();
-                    requestBuffer = null;
-                }
-                if (responseBuffer != null) {
-                    responseBuffer.clear();
-                    responseBuffer = null;
-                }
-            } catch (Exception e) {
-                // Log the exception or handle it as appropriate for your application
-                System.err.println("Error while closing connection: " + e.getMessage());
-            } finally {
-                // Ensure all resources are nullified even if an exception occurs
-                requestBuffer = null;
-                responseBuffer = null;
-            }
-        }
-    }
+    
 }

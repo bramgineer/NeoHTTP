@@ -10,16 +10,12 @@ public class HttpResponse {
     private Map<String, String> headers;
     private String body;
 
-    // Constructors
-    public HttpResponse() {
-        this(200, "OK", new HashMap<>(), "");
-    }
-
-    public HttpResponse(int statusCode, String statusMessage, Map<String, String> headers, String body) {
-        this.statusCode = statusCode;
-        this.statusMessage = statusMessage;
-        this.headers = headers;
-        this.body = body;
+    // Private constructor for use with Builder
+    private HttpResponse(Builder builder) {
+        this.statusCode = builder.statusCode;
+        this.statusMessage = builder.statusMessage;
+        this.headers = builder.headers;
+        this.body = builder.body;
     }
 
     // Getters
@@ -37,23 +33,6 @@ public class HttpResponse {
 
     public String getBody() {
         return body;
-    }
-
-    // Setters
-    public void setStatusCode(int statusCode) {
-        this.statusCode = statusCode;
-    }
-
-    public void setStatusMessage(String statusMessage) {
-        this.statusMessage = statusMessage;
-    }
-
-    public void setHeaders(Map<String, String> headers) {
-        this.headers = headers;
-    }
-
-    public void setBody(String body) {
-        this.body = body;
     }
 
     // Utility methods
@@ -101,14 +80,20 @@ public class HttpResponse {
     }
 
     public static HttpResponse ok(String body) {
-        return new HttpResponse(200, "OK", new HashMap<>(), body);
+        return new Builder()
+            .setStatusCode(200)
+            .setStatusMessage("OK")
+            .setBody(body)
+            .build();
     }
 
     public static HttpResponse error(int statusCode, String statusMessage, String errorMessage) {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Content-Type", "text/plain");
-        String body = statusCode + " " + statusMessage + "\n" + errorMessage;
-        return new HttpResponse(statusCode, statusMessage, headers, body);
+        return new Builder()
+            .setStatusCode(statusCode)
+            .setStatusMessage(statusMessage)
+            .setContentType("text/plain")
+            .setBody(statusCode + " " + statusMessage + "\n" + errorMessage)
+            .build();
     }
 
     public static HttpResponse badRequest(String errorMessage) {
@@ -134,6 +119,47 @@ public class HttpResponse {
             return methodNotAllowed(e.getMessage());
         } else {
             return internalServerError(e.getMessage());
+        }
+    }
+
+    public static class Builder {
+        private int statusCode = 200;
+        private String statusMessage = "OK";
+        private Map<String, String> headers = new HashMap<>();
+        private String body = "";
+
+        public Builder setStatusCode(int statusCode) {
+            this.statusCode = statusCode;
+            return this;
+        }
+
+        public Builder setStatusMessage(String statusMessage) {
+            this.statusMessage = statusMessage;
+            return this;
+        }
+
+        public Builder setHeaders(Map<String, String> headers) {
+            this.headers = headers;
+            return this;
+        }
+
+        public Builder addHeader(String key, String value) {
+            this.headers.put(key, value);
+            return this;
+        }
+
+        public Builder setContentType(String contentType) {
+            this.headers.put("Content-Type", contentType);
+            return this;
+        }
+
+        public Builder setBody(String body) {
+            this.body = body;
+            return this;
+        }
+
+        public HttpResponse build() {
+            return new HttpResponse(this);
         }
     }
 }

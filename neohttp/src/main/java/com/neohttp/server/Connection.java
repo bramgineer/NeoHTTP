@@ -1,191 +1,92 @@
 package com.neohttp.server;
-
-import com.neohttp.util.HttpParser;
-import com.neohttp.handler.RequestHandler;
-
-import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.nio.ByteBuffer;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.logging.Logger;
-import java.util.logging.Level;
 
 public class Connection {
-    private static final Logger logger = Logger.getLogger(Connection.class.getName());
-    private static final int BUFFER_SIZE = 4096;
-    private ByteBuffer requestBuffer;
+    private ByteBuffer requestBuffer = ByteBuffer.allocate(1024);
     private ByteBuffer responseBuffer;
-    private HttpRequest request;
-    private HttpResponse response;
-    private boolean keepAlive;
-    private ConnectionState state;
+    //private StringBuilder requestBuilder = new StringBuilder();
+    private boolean keepAlive = false;
 
-    private enum ConnectionState {
-        READING, PROCESSING, WRITING, CLOSED
-    }
-
-    private Exception lastException;
-
-    public Connection() {
-        /*
-         * Initialize the connection with a request buffer of size BUFFER_SIZE.
-         */
-        try {
-            this.requestBuffer = ByteBuffer.allocate(BUFFER_SIZE);
-            this.keepAlive = false;
-            this.state = ConnectionState.READING;
-            logger.fine("Connection initialized with buffer size: " + BUFFER_SIZE);
-        } catch (IllegalArgumentException e) {
-            // Handle the case where BUFFER_SIZE is negative
-            this.lastException = new RuntimeException("Failed to allocate request buffer", e);
-            this.state = ConnectionState.CLOSED;
-            logger.log(Level.SEVERE, "Failed to allocate request buffer", e);
-        } catch (OutOfMemoryError e) {
-            // Handle the case where there's not enough memory to allocate the buffer
-            this.lastException = new RuntimeException("Insufficient memory to allocate request buffer", e);
-            this.state = ConnectionState.CLOSED;
-            logger.log(Level.SEVERE, "Insufficient memory to allocate request buffer", e);
-        }
-    }
-
-    public void read(SocketChannel channel) throws IOException {
-        /*
-         * Read the request from the socket channel into the request buffer.
-         */
-        try {
-            int bytesRead = channel.read(requestBuffer);
-            logger.fine("Read " + bytesRead + " bytes from channel");
-            if (bytesRead == -1) {
-                state = ConnectionState.CLOSED;
-                logger.info("End of stream reached, closing connection");
-                return;
+    int read(SocketChannel channel) throws IOException {
+        int totalBytesRead = 0;
+        int bytesRead;
+        do {
+            bytesRead = channel.read(requestBuffer);
+            if (bytesRead > 0) {
+                totalBytesRead += bytesRead;
             }
-            if (isRequestComplete()) {
-                state = ConnectionState.PROCESSING;
-                logger.fine("Request complete, moving to PROCESSING state");
-            }
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error reading from channel", e);
-            handleException(e);
-        }
-    }
+        } while (bytesRead > 0);
 
-    public boolean isRequestComplete() {
-        /*
-         * Check if the request is complete by checking if the request buffer contains the CRLF CRLF sequence.
-         */
-        String requestStr = new String(requestBuffer.array(), 0, requestBuffer.position(), StandardCharsets.UTF_8);
-        boolean isComplete = requestStr.contains("\r\n\r\n");
-        logger.fine("Request complete: " + isComplete);
-        return isComplete;
-    }
-
-    public void processRequest(RequestHandler handler) {
-        /*
-         * Parse the request from the request buffer into a HttpRequest object.
-         */
-        try {
+        if (totalBytesRead == 0 && !requestBuffer.hasRemaining()) {
+            // Buffer is full, resize it
+            ByteBuffer newBuffer = ByteBuffer.allocate(requestBuffer.capacity() * 2);
             requestBuffer.flip();
-            request = HttpParser.parseRequest(requestBuffer);
-            keepAlive = HttpParser.isKeepAlive(request);
-            logger.fine("Request parsed, keep-alive: " + keepAlive);
-            response = handler.handle(request);
-            state = ConnectionState.WRITING;
-            prepareResponse();
-            logger.fine("Response prepared, moving to WRITING state");
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Error processing request", e);
-            handleException(e);
+            newBuffer.put(requestBuffer);
+            requestBuffer = newBuffer;
         }
+
+        return totalBytesRead;
     }
 
-    private void prepareResponse() {
-        /*
-         * Convert the response to a string and wrap it in a ByteBuffer.
-         */
-        String responseStr = response.toString();
-        responseBuffer = ByteBuffer.wrap(responseStr.getBytes(StandardCharsets.UTF_8));
-        logger.fine("Response prepared with " + responseBuffer.remaining() + " bytes");
+    boolean isRequestComplete() {
+        requestBuffer.flip();
+        String content = new String(requestBuffer.array(), 0, requestBuffer.limit());
+        requestBuffer.compact();
+        return content.contains("\r\n\r\n");
     }
 
-    public void write(SocketChannel channel) throws IOException {
-        /*
-         * Write the response to the socket channel.
-         */
-        try {
-            int bytesWritten = channel.write(responseBuffer);
-            logger.fine("Wrote " + bytesWritten + " bytes to channel");
-            if (!responseBuffer.hasRemaining()) {
-                if (keepAlive) {
-                    reset();
-                    logger.fine("Keep-alive connection reset");
-                } else {
-                    state = ConnectionState.CLOSED;
-                    logger.info("Response fully written, closing connection");
-                }
-            }
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error writing to channel", e);
-            handleException(e);
-        }
+    void prepareResponse(Router router) {
+        requestBuffer.flip();
+        String requestString = new String(requestBuffer.array(), 0, requestBuffer.limit());
+        HttpRequest request = HttpRequest.parse(requestString.trim());
+        RequestHandler handler = router.getHandler(request.getPath());
+        HttpResponse response = handler.handle(request);
+        responseBuffer = ByteBuffer.wrap(response.toString().getBytes());
+        
+        keepAlive = requestString.toLowerCase().contains("connection: keep-alive");
     }
 
-    private void handleException(Exception e) {
-        lastException = e;
-        state = ConnectionState.CLOSED;
-        logger.log(Level.SEVERE, "Connection closed due to exception", e);
+    void write(SocketChannel channel) throws IOException {
+        channel.write(responseBuffer);
     }
 
-    public Exception getLastException() {
-        return lastException;
-    }
-    
-    public void reset() {
-        /*
-         * Reset the connection state.
-         */
-        try {
-            requestBuffer.clear();
-            responseBuffer = null;
-            request = null;
-            response = null;
-            state = ConnectionState.READING;
-            logger.fine("Connection reset, ready for next request");
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Error resetting connection", e);
-            handleException(e);
-            // If an exception occurs during reset, we should ensure the connection is closed
-            state = ConnectionState.CLOSED;
-        }
+    boolean isResponseComplete() {
+        return responseBuffer != null && !responseBuffer.hasRemaining();
     }
 
-    public boolean isKeepAlive() {
-        /*
-         * Check if the connection is keep-alive.
-         */
+    boolean isKeepAlive() {
         return keepAlive;
     }
+    private StringBuilder requestBuilder = new StringBuilder();
 
-    public ConnectionState getState() {
-        /*
-         * Get the current connection state.
-         */
-        return state;
+    public StringBuilder getRequestBuilder() {
+        return requestBuilder;
+    }
+    
+    void reset() {
+        requestBuffer.clear();
+        responseBuffer = null;
     }
 
-    public boolean isReadyToWrite() {
-        /*
-         * Check if the connection is ready to write by checking if the connection state is WRITING and the response buffer is not null.
-         */
-        boolean ready = state == ConnectionState.WRITING && responseBuffer != null;
-        logger.fine("Connection ready to write: " + ready);
-        return ready;
-    }
-
-    public boolean isClosed() {
-        /*
-         * Check if the connection is closed by checking if the connection state is CLOSED.
-         */
-        return state == ConnectionState.CLOSED;
+    public void close() {
+        try {
+            if (requestBuffer != null) {
+                requestBuffer.clear();
+                requestBuffer = null;
+            }
+            if (responseBuffer != null) {
+                responseBuffer.clear();
+                responseBuffer = null;
+            }
+        } catch (Exception e) {
+            // Log the exception or handle it as appropriate for your application
+            System.err.println("Error while closing connection: " + e.getMessage());
+        } finally {
+            // Ensure all resources are nullified even if an exception occurs
+            requestBuffer = null;
+            responseBuffer = null;
+        }
     }
 }

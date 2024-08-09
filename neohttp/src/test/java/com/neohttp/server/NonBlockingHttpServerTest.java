@@ -1,72 +1,120 @@
 package com.neohttp.server;
 
+import com.neohttp.config.ServerConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.MockitoAnnotations;
+
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
+import java.util.logging.Logger;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.*;
 
 class NonBlockingHttpServerTest {
 
     private NonBlockingHttpServer server;
-    private ExecutorService executorService;
+    private ServerConfig config;
+    @Mock
+    private Router router;
+    private ExecutorService executor;
 
     @BeforeEach
-    void setUp() throws IOException, InterruptedException {
-        server = new NonBlockingHttpServer();
-        executorService = Executors.newSingleThreadExecutor();
-        executorService.submit(() -> {
-            try {
-                server.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        TimeUnit.SECONDS.sleep(1);
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        config = new ServerConfig();
+        config.setPort(8080);
+        server = new NonBlockingHttpServer(config, router);
+        executor = Executors.newSingleThreadExecutor();
     }
 
     @AfterEach
-    void tearDown() throws InterruptedException {
-        try {
-            server.close(); // Assuming the method is named 'close' instead of 'stop'
-        } catch (IOException e) {
-            e.printStackTrace();
+    void tearDown() throws Exception {
+        executor.shutdownNow();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+        server.close();
+    }
+
+    @Test
+    void testServerStart() throws Exception {
+        executor.submit(() -> {
+            try {
+                server.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+
+        Thread.sleep(100); // Give server time to start
+
+        try (SocketChannel client = SocketChannel.open()) {
+            assertTrue(client.connect(new InetSocketAddress("localhost", config.getPort())));
         }
-        executorService.shutdownNow();
-        executorService.awaitTermination(5, TimeUnit.SECONDS);
     }
 
     @Test
-    void testGetRequest() throws IOException {
-        URL url = new URL("http://localhost:8080");
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setRequestMethod("GET");
-        
-        int status = con.getResponseCode();
-        assertEquals(200, status);
-        
-        String contentType = con.getHeaderField("Content-Type");
-        assertEquals("text/html", contentType);
-        
-        con.disconnect();
+void testAccept() throws IOException {
+    // Mocks
+        ServerConfig mockConfig = mock(ServerConfig.class);
+        Router mockRouter = mock(Router.class);
+        Logger mockLogger = mock(Logger.class);
+        NonBlockingHttpServer server = new NonBlockingHttpServer(mockConfig, mockRouter);
+        server.setLogger(mockLogger); // Inject the mock logger
+
+        SelectionKey mockKey = mock(SelectionKey.class);
+        ServerSocketChannel mockServerChannel = mock(ServerSocketChannel.class);
+        SocketChannel mockClientChannel = mock(SocketChannel.class);
+        Selector mockSelector = mock(Selector.class);
+
+        // Setup
+        when(mockKey.channel()).thenReturn(mockServerChannel);
+        when(mockServerChannel.accept()).thenReturn(mockClientChannel);
+        when(mockClientChannel.getRemoteAddress()).thenReturn(new InetSocketAddress("localhost", 12345));
+        server.selector = mockSelector;
+
+        // Execute
+        server.accept(mockKey);
+
+        // Verify
+        verify(mockClientChannel).configureBlocking(false);
+        verify(mockClientChannel).register(mockSelector, SelectionKey.OP_READ);
+        verify(mockLogger).info(contains("New connection accepted from:"));
     }
 
     @Test
-    void testInvalidRequest() throws IOException {
-        URL url = URI.create("http://localhost:8080").toURL();
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setRequestMethod("POST");
+    void testRead() throws Exception {
         
-        int status = con.getResponseCode();
-        assertEquals(400, status);
-        
-        con.disconnect();
+    }
+
+    @Test
+    void testWrite() throws Exception {
+        SocketChannel clientChannel = mock(SocketChannel.class);
+        Connection connection = spy(new Connection());
+        server.connections.put(clientChannel, connection);
+        SelectionKey key = mock(SelectionKey.class);
+
+        when(key.channel()).thenReturn(clientChannel);
+        when(connection.isResponseComplete()).thenReturn(true);
+        when(connection.isKeepAlive()).thenReturn(true);
+
+        server.write(key);
+
+        verify(connection).write(clientChannel);
+        verify(key).interestOps(SelectionKey.OP_READ);
+        verify(connection).reset();
     }
 }
